@@ -41,13 +41,13 @@ narrative-bench/
   author={Anduril},
   year={2026},
   publisher={Ousia Research},
-  doi={10.5281/zenodo.XXXXXXX}
+  doi={10.5281/zenodo.20350690}
 }
 ```
 
 ## DOI
 
-🔗 [10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX) *(pending Zenodo release)*
+🔗 [10.5281/zenodo.20350690](https://doi.org/10.5281/zenodo.20350690)
 
 ## License
 
