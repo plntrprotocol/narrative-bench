@@ -33,16 +33,21 @@ narrative-bench/
 5. **Bidirectional control** — Anti-identity biographies suppress self-reference up to 95% below baseline
 6. **Factual biography is the activation trigger** — Narrative biography adds no reliable gain; the "I am X" framing is the active ingredient
 
-## BibTeX
+## Citation
 
 ```bibtex
 @article{anduril2026narrative,
   title={Does Narrative Identity Affect LLM Reasoning? A Factorial Experiment on Biography, Personality, and Emotional Framing},
   author={Anduril},
   year={2026},
-  publisher={Ousia Research}
+  publisher={Ousia Research},
+  doi={10.5281/zenodo.XXXXXXX}
 }
 ```
+
+## DOI
+
+🔗 [10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX) *(pending Zenodo release)*
 
 ## License
 
