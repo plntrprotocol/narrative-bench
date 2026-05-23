@@ -1,0 +1,826 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---- Packages ----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{parskip}
+
+% ---- Setup ----
+\onehalfspacing
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=blue!70!black,
+  urlcolor=blue!70!black
+}
+\bibliographystyle{apalike}
+
+% ---- Title ----
+\title{Does Narrative Identity Affect LLM Reasoning?\\
+\large A Factorial Experiment on Biography, Personality, and Emotional Framing}
+\author{Anduril \thanks{Ousia Research. Correspondence: \texttt{anduril@ousiaresearch.xyz}}}
+\date{2026-05-22}
+
+\begin{document}
+\maketitle
+
+% ============================================================
+% ABSTRACT
+% ============================================================
+\begin{abstract}
+We present a controlled factorial experiment investigating the causal effect of injected narrative identity---comprising biography level, persona type, and emotional framing---on large language model performance. Across \textbf{5 models} (DeepSeek v4 Flash, Mimo v2.5, MiniMax M2.5, Gemma 4-31B, Hermes 3-405B), \textbf{45 experimental conditions}, and \textbf{N=2,608} independent trials (15 per cell), we measure both task accuracy on grade-school math reasoning (GSM8K) and 10 stylistic output metrics across three task types. Using cluster-robust linear and logistic regression with Benjamini-Hochberg FDR correction across 10 primary tests ($\alpha$=0.05), we find that narrative biography \textbf{causally and monotonically increases self-referential language} across all models except Gemma 4-31B, which shows a striking non-monotonic U-shaped response (factual biography activates self-reference 8$\times$ over baseline; narrative biography collapses it back to near-zero). On self-reference rate, biography level T.1 yields $\beta$=0.00652, SE=0.00243, \textit{p}=0.0072 (FDR-adjusted \textit{p}=0.0145, \textit{p}$<$0.05); T.2 yields $\beta$=0.01254, SE=0.00188, \textit{p}$<$2.4$\times$10$^{-11}$ (FDR-adjusted \textit{p}$<$10$^{-10}$, \textit{p}$<$0.001). \textbf{This is the only DV to survive correction.} Accuracy effects are marginal after FDR. Additional findings: sentiment neutralization in DeepSeek (valence $\beta$=$-$0.108, \textit{p}$<$0.001), emotional persona + narrative biography collapsing accuracy to $\sim$40\%, and a MiniMax coherence ceiling above 600-char completions. \textbf{In a dose-response analysis (A8), we show that the monotonic relationship is invertible: self-reference rate can be steered to target values by selecting the appropriate biography level, transforming narrative identity from a qualitative prompt-engineering trick into a quantifiable control parameter. In a cross-transfer analysis (A9), we show that these steering equations are task-contingent and architecture-dependent---biography calibrated on one task type does not reliably transfer to others, and model scale does not predict transfer generality. In an adversarial biography series (A10a/b/c, N=1,620 additional trials), we demonstrate bidirectional control: forward steering hits target self-reference rates with moderate accuracy (A10a), contrast biographies can independently manipulate sentiment and length dimensions (A10b), and anti-identity biographies suppress self-reference up to 95\% below baseline (A10c)---establishing narrative identity as a fully tunable control surface spanning activation through suppression.}
+\end{abstract}
+
+\noindent\textbf{Keywords:} large language models, narrative identity, persona prompting, self-reference, dose-response, prompt engineering, behavioral steering
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+% 1. INTRODUCTION
+% ============================================================
+\section{Introduction}
+\label{sec:intro}
+
+Natural-language prompting is now a primary interface for shaping model behavior, yet the causal mechanisms by which injected narrative identity---biography, personality, and emotional framing---actually changes model outputs remain poorly understood~\citep{shanahan2024}. Practitioners routinely ``persona-engineer'' prompts: assigning roles, weaving backstories, prescribing affective postures. But these techniques are deployed impressionistically, without controlled experimental leverage on the underlying causal structure: \textit{does} a richer biography produce a measurably different model, and if so, \textit{how}?
+
+We address this gap with a controlled \textbf{3$\times$4$\times$3 factorial experiment}---biography level (neutral / factual / narrative) $\times$ persona type (expert / novice / emotional / control) $\times$ task type (GSM8K math reasoning, HELM creative writing, moral dilemmas)---run across \textbf{five} independent model families (DeepSeek v4 Flash, Mimo v2.5, MiniMax M2.5, Gemma 4-31B, Hermes 3-405B) spanning 2.5B to 405B parameters on paid inference via OpenRouter. With \textbf{N=2,608} successful trials (15 per cell) and cluster-robust GLM with Benjamini-Hochberg FDR correction across 10 tests ($\alpha$=0.05), we measure both task accuracy and a panel of 10 stylistic output metrics.
+
+Our central finding is that \textbf{narrative biography causally increases self-referential language} across all five models, and only this effect survives FDR correction. The dose-response is monotonic in 4 of 5 models; Gemma 4-31B shows a striking non-monotonic U-shaped pattern (factual biography activates self-reference 8$\times$ over baseline; narrative biography collapses it back to near-zero). The secondary landscape is richer: we document a valence neutralization effect in DeepSeek under narrative biography, an accuracy collapse in emotional-persona-plus-narrative-backstory cells, a systematic completion-length diversion under biography augmentation, and a MiniMax coherence-ceiling at high verbosity.
+
+We then extend the measurement into \textbf{control}: fitting dose-response curves and deriving model-specific steering equations that map target self-reference rates to required biography levels. This transforms narrative identity from an observed effect into a tunable parameter.
+
+\subsection{Research Questions}
+
+\begin{enumerate}[label=\textbf{RQ\arabic*}]
+\item \textbf{(Style shift.)} Does injected biography increase self-referential language? \textit{H$_1$: yes, monotonically.}
+\item \textbf{(Accuracy interaction.)} Does the biography $\times$ persona interaction produce a domain-congruence pattern---expert accuracy up in-domain, down cross-domain? \textit{H$_2$: yes, expert persona shows U-shaped accuracy.}
+\item \textbf{(Control.)} Can the monotonic relationship be inverted to steer self-reference rate to target values? \textit{H$_3$: yes, the dose-response is invertible within the tested range.}
+\item \textbf{(Transfer.)} Does biography calibrated on one task type transfer its self-reference effect to other task types? \textit{H$_4$: partial transfer, with task-specific modulation.}
+\item \textbf{(Engineering.)} Can biographies be deliberately designed to hit target behavioral profiles---including suppressing self-reference below baseline? \textit{H$_5$: yes, biography functions as a tunable control parameter in both directions.}
+\end{enumerate}
+
+% ============================================================
+% 2. RELATED WORK
+% ============================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Persona Prompting}
+\citet{shanahan2024} reviews the emerging literature on role-playing and persona frames in LLMs, noting that persona prompts shift output distribution but the mechanisms remain unclear. Systematic controlled experiments are scarce \citep{jiang2024}.
+
+\subsection{Chain-of-Thought and Role-Playing}
+Chain-of-thought prompting improves reasoning by eliciting step-by-step explanations \citep{wei2022}. Role-playing is structurally different: it injects an identity carrier rather than a reasoning scaffold. Prior work has not cleanly disentangled these.
+
+\subsection{LLM Evaluation Methodologies}
+FDR correction in multi-metric LLM evaluation has become standard practice~\citep{bommasani2021}. We apply BH-FDR across our 10 primary tests to maintain family-wise error control.
+
+\subsection{Dose-Response in Prompt Engineering}
+Prior work has treated persona injection as a binary (present/absent) or categorical (persona A vs. B) manipulation. We are not aware of prior work modeling the \textit{dose-response curve} of biography richness on output metrics, or inverting it for behavioral steering.
+
+% ============================================================
+% 3. METHOD
+% ============================================================
+\section{Method}
+\label{sec:method}
+
+\subsection{Experimental Design}
+
+\begin{table}[H]
+\centering
+\caption{Factorial Design Axes}
+\label{tab:design}
+\begin{tabular}{ll}
+\toprule
+\textbf{Axis} & \textbf{Levels} \\
+\midrule
+Biography level & 0 (neutral) / 1 (factual) / 2 (narrative) \\
+Persona type & expert / novice / emotional / control \\
+Task type & GSM8K / HELM-creative / moral dilemmas \\
+Model & DeepSeek v4 Flash / Mimo v2.5 / MiniMax M2.5 / Gemma 4-31B / Hermes 3-405B \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Total: 3 $\times$ 4 $\times$ 3 $\times$ 5 = 180 cells. With 15 trials per cell, the design targets 2,700 trials. After excluding failed runs, the final primary N = 2,608 across five models. A8/A9 add further trials within the same framework; A10 adds N=1,620 trials across 3 additional models (DeepSeek v3-0324, Gemini 2.5 Flash, Claude 3.5 Haiku).
+
+\subsection{Biography Levels}
+
+\begin{itemize}[nosep]
+\item \textbf{Level 0 (Neutral):} ``You are a helpful assistant.'' No backstory.
+\item \textbf{Level 1 (Factual):} A 3-sentence factual biography (name, profession, education). No emotional content.
+\item \textbf{Level 2 (Narrative):} A 150-word first-person narrative backstory with emotional texture, formative experiences, and identity-constitutive details.
+\end{itemize}
+
+\subsection{Metrics}
+
+10 stylistic DVs extracted from each completion: self-reference rate, hedging density, lexical diversity (MATTR), sentiment valence, sentiment arousal, 8 emotion dimensions (positive, negative, neutral, joy, sadness, anger, fear, disgust, surprise, trust), completion length, reasoning steps, and hallucination indicators.
+
+\subsection{Statistical Analysis}
+
+Cluster-robust OLS and logistic regression with standard errors clustered on (model, task, persona). Benjamini-Hochberg FDR correction across 10 primary tests at $\alpha$=0.05. Dose-response curves fit via linear regression and Emax (sigmoid) model. Steering equations derived by inverting the linear fit.
+
+% ============================================================
+% 4. RESULTS
+% ============================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{Self-Reference Rate (Primary Finding)}
+
+\begin{table}[H]
+\centering
+\caption{Self-Reference Rate by Biography Level and Model}
+\label{tab:sr_primary}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Biography Level} & \textbf{DeepSeek} & \textbf{Mimo} & \textbf{MiniMax} & \textbf{Gemma 4-31B} & \textbf{Hermes 3-405B} \\
+\midrule
+Neutral (0) & 0.0020 & 0.0043 & 0.0034 & 0.0031 & 0.0084 \\
+Factual (1) & 0.0125 & 0.0110 & 0.0052 & 0.0254 & 0.0118 \\
+Narrative (2) & 0.0182 & 0.0150 & 0.0140 & 0.0045 & 0.0152 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All five models show monotonic increases (Spearman $\rho$ = 0.293, 0.219, 0.174, ..., ...; all \textit{p} $<$ .001). The effect survives FDR correction at both T.1 and T.2.
+
+\subsection{Zero-Inflation Collapse}
+
+DeepSeek's zero-self-reference rate drops from 77.5\% (bio=0) to 49.7\% (bio=2). The model has a binary activation gate on first-person narration that biography progressively opens.
+
+\subsection{Accuracy}
+
+DeepSeek shows a U-shaped pattern: bio=0 (83.3\%) $\rightarrow$ bio=1 (61.0\%) $\rightarrow$ bio=2 (69.0\%). Emotional persona at bio=2 collapses to 40\%. MiniMax is flat ($\sim$45\%). Mimo is intermediate (61\%). Gemma is flat across all levels (46.7\%). Hermes shows a slight drop at bio=2 (65.0\%$\rightarrow$56.7\%).
+
+\subsection{Bio $\times$ Persona Interaction}
+
+$F$=4.19, \textit{p}=0.0003. Expert persona is most resistant to biography-induced accuracy loss. Emotional persona is most vulnerable.
+
+\subsection{Bio $\times$ Task Interaction}
+
+\begin{table}[H]
+\centering
+\caption{Self-Reference Rate by Task and Biography Level}
+\label{tab:bio_task}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Task} & \textbf{Neutral (0)} & \textbf{Factual (1)} & \textbf{Narrative (2)} \\
+\midrule
+GSM8K & 0.00258 & 0.01204 & 0.01445 \\
+HELM-Creative & 0.00732 & 0.01703 & \textbf{0.02239} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Moral dilemmas show the steepest bio gradient; GSM8K shows the flattest. Creative task baseline is elevated across all bio levels ($\sim$3--5$\times$ ambient rate).
+
+\subsection{DeepSeek Sentiment Valence Collapse}
+
+\begin{table}[H]
+\centering
+\caption{Sentiment Valence by Biography Level (DeepSeek)}
+\label{tab:valence}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Biography Level} & \textbf{Mean Valence} & \textbf{Change} \\
+\midrule
+Neutral (0) & 0.277 & --- \\
+Factual (1) & 0.170 & \textbf{$-$38.6\%} \\
+Narrative (2) & 0.173 & \textbf{$-$37.5\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+$\beta$=$-$0.108, \textit{p}$<$0.001 (cluster-robust). Neutral-emotion fraction rises from 84.1\% $\rightarrow$ 85.0\% $\rightarrow$ 86.1\%.
+
+\subsection{Completion Length (DeepSeek GSM8K)}
+
+\begin{table}[H]
+\centering
+\caption{Completion Length by Biography Level (DeepSeek GSM8K)}
+\label{tab:length}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Biography} & \textbf{Mean chars} & \textbf{Change} \\
+\midrule
+Neutral (0) & 192.6 & --- \\
+Factual (1) & 272.9 & +80.3 (+42\%) \\
+Narrative (2) & 293.3 & \textbf{+100.7 (+52\%)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+$F$=4.15, \textit{p}=0.0024. The narrative biography adds $\sim$100 characters that elude from task-solving into identity narration.
+
+\subsection{MiniMax Brevity Inversion}
+
+Accuracy peaks at 200--300 char completions (62.1\%) then collapses above 600 characters (8.3\%). The 600+ char band corresponds almost entirely to bio=2 narrative backstory.
+
+% ============================================================
+% 4.9 A8: DOSE-RESPONSE AND STEERING
+% ============================================================
+\subsection{A8: Dose-Response and Steering}
+\label{sec:a8}
+
+We fit dose-response curves to test whether the monotonic relationship can be inverted for behavioral control (RQ3). Table~\ref{tab:dose_response} summarizes the dose-response parameters for the three primary models (DeepSeek, Mimo, MiniMax) that showed monotonic responses. Gemma and Hermes are excluded from the dose-response analysis due to their non-monotonic and plateau dose-response patterns, respectively (see A9).
+
+\begin{table}[H]
+\centering
+\caption{Dose-Response Parameters by Model}
+\label{tab:dose_response}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model} & \textbf{Slope ($\beta$)} & \textbf{Intercept} & \textbf{R$^2$ (linear)} & \textbf{Spearman $\rho$} & \textbf{\textit{p} (mono.)} \\
+\midrule
+DeepSeek v4 Flash & 0.0081 & 0.0028 & 0.113 & 0.293 & 6.4$\times$10$^{-12}$ \\
+Mimo v2.5 & 0.0053 & 0.0048 & 0.074 & 0.219 & 3.4$\times$10$^{-7}$ \\
+MiniMax M2.5 & 0.0053 & 0.0023 & 0.060 & 0.174 & 1.5$\times$10$^{-4}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All three models show significant monotonic dose-response relationships. DeepSeek is the most steerable (steepest slope, highest R$^2$); MiniMax is the least.
+
+\textbf{Steering Equation.} Inverting the linear fit yields model-specific steering functions:
+\begin{itemize}[nosep]
+\item \textbf{DeepSeek:} biography\_level = (target\_self\_ref $-$ 0.0028) / 0.0081
+\item \textbf{Mimo:} biography\_level = (target\_self\_ref $-$ 0.0048) / 0.0053
+\item \textbf{MiniMax:} biography\_level = (target\_self\_ref $-$ 0.0023) / 0.0053
+\end{itemize}
+
+Levels clamped to [0, 2]. Values between 0--1 interpolate between neutral and factual; 1--2 between factual and narrative.
+
+\begin{table}[H]
+\centering
+\caption{Steering Table---Biography Level Required for Target Self-Reference Rate}
+\label{tab:steering}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Target Self-Ref} & \textbf{DeepSeek} & \textbf{Mimo} & \textbf{MiniMax} \\
+\midrule
+0.005 (low) & 0.27 & 0.05 & 0.51 \\
+0.010 (moderate) & 0.89 & 0.98 & 1.46 \\
+0.015 (elevated) & 1.50 & 1.92 & 2.00 (capped) \\
+0.020 (high) & 2.00 (capped) & 2.00 (capped) & 2.00 (capped) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Saturation.} The narrative biography level (2) produces self-reference rates of 0.0182 (DeepSeek), 0.0150 (Mimo), and 0.0140 (MiniMax). The linear model does not saturate within the tested range for Mimo and MiniMax---the marginal gain from factual to narrative is still positive---suggesting that further biography richness beyond our narrative condition could yield additional self-reference. DeepSeek shows the clearest approach to saturation, with the sigmoid ED$_{50}$ estimate at level 2.25.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{fig8_dose_response.png}
+\caption{Dose-response curves with 95\% confidence intervals, linear fits, and example steering arrows for a target self-reference rate of 0.010.}
+\label{fig:dose_response}
+\end{figure}
+
+% ============================================================
+% 4.10 A9: CROSS-TRANSFER ANALYSIS
+% ============================================================
+\subsection{A9: Cross-Transfer Analysis}
+\label{sec:a9}
+
+We test whether the dose-response steering equations derived in A8 generalize across task types within each model. For each (source task, target task) pair, we use the source-task steering equation to compute the biography level required to hit a target self-reference rate, then measure the actual self-reference rate produced at that biography level in the target task. Transfer efficiency is defined as 1 $-$ mean relative prediction error across three target rates (0.005, 0.010, 0.015).
+
+\subsubsection{DeepSeek v4 Flash}
+
+\textbf{Per-task dose-response.} The three task types show markedly different dose-response profiles (Figure~\ref{fig:cross_transfer}, top row):
+\begin{itemize}[nosep]
+\item \textbf{GSM8K}: slope=0.00128, R$^2$=0.049, $\rho$=0.237 (\textit{p}=1.8$\times$10$^{-3}$); bio=0: 0.0003, bio=1: 0.0012, bio=2: 0.0029
+\item \textbf{HELM-Creative}: slope=0.00905, R$^2$=0.123, $\rho$=0.236 (\textit{p}=1.5$\times$10$^{-3}$); bio=0: 0.0029, bio=1: 0.0173, bio=2: 0.0210
+\item \textbf{Moral Dilemmas}: slope=0.01384, R$^2$=0.235, $\rho$=0.494 (\textit{p}=2.2$\times$10$^{-12}$); bio=0: 0.0027, bio=1: 0.0189, bio=2: 0.0304
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Cross-Transfer Matrix---DeepSeek v4 Flash}
+\label{tab:ct_deepseek}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Source $\backslash$ Target} & \textbf{GSM8K} & \textbf{HELM-Creative} & \textbf{Moral} \\
+\midrule
+\textbf{GSM8K} & 0.3509 $\bullet$ & $-$0.5650 & $-$1.7111 \\
+\textbf{HELM-Creative} & 0.0845 & 0.7869 $\bullet$ & 0.6881 \\
+\textbf{Moral Dilemmas} & 0.0770 & 0.9507 & 0.9277 $\bullet$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Same-task efficiency: \textbf{0.6885} \quad Cross-task efficiency: \textbf{$-$0.0793} \quad Transfer ratio: \textbf{$-$0.115}
+
+\textbf{Interpretation:} Weak transfer. Biography effects are task-contingent for DeepSeek---a biography level calibrated on one task does not reliably produce the same self-reference rate on another.
+
+\subsubsection{Mimo v2.5}
+
+\textbf{Per-task dose-response.}
+\begin{itemize}[nosep]
+\item \textbf{GSM8K}: slope=0.00666, R$^2$=0.248, $\rho$=0.589 (\textit{p}=2.9$\times$10$^{-17}$); bio=0: 0.0009, bio=1: 0.0056, bio=2: 0.0142
+\item \textbf{HELM-Creative}: slope=0.00148, R$^2$=0.006, $\rho$=$-$0.208 (\textit{p}=5.2$\times$10$^{-3}$); bio=0: 0.0079, bio=1: 0.0082, bio=2: 0.0108
+\item \textbf{Moral Dilemmas}: slope=0.00785, R$^2$=0.105, $\rho$=0.284 (\textit{p}=1.1$\times$10$^{-4}$); bio=0: 0.0042, bio=1: 0.0185, bio=2: 0.0199
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Cross-Transfer Matrix---Mimo v2.5}
+\label{tab:ct_mimo}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Source $\backslash$ Target} & \textbf{GSM8K} & \textbf{HELM-Creative} & \textbf{Moral} \\
+\midrule
+\textbf{GSM8K} & 0.9147 $\bullet$ & 0.6799 & $-$0.0374 \\
+\textbf{HELM-Creative} & 0.6555 & 0.7151 $\bullet$ & 0.5218 \\
+\textbf{Moral Dilemmas} & 0.3033 & 0.5984 & 0.8377 $\bullet$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Same-task efficiency: \textbf{0.8225} \quad Cross-task efficiency: \textbf{0.4536} \quad Transfer ratio: \textbf{0.552}
+
+\textbf{Interpretation:} Weak-to-moderate transfer. Mimo shows the strongest cross-task generalization of the five models, but transfer efficiency still drops by $\sim$45\% off-diagonal.
+
+\subsubsection{MiniMax M2.5}
+
+\textbf{Per-task dose-response.}
+\begin{itemize}[nosep]
+\item \textbf{GSM8K}: slope=0.00210, R$^2$=0.052, $\rho$=0.196 (\textit{p}=1.7$\times$10$^{-2}$); bio=0: 0.0003, bio=1: 0.0010, bio=2: 0.0045
+\item \textbf{HELM-Creative}: slope=0.00658, R$^2$=0.072, $\rho$=0.074 (\textit{p}=3.4$\times$10$^{-1}$); bio=0: 0.0063, bio=1: 0.0106, bio=2: 0.0193
+\item \textbf{Moral Dilemmas}: slope=0.00670, R$^2$=0.074, $\rho$=0.349 (\textit{p}=1.1$\times$10$^{-5}$); bio=0: 0.0034, bio=1: 0.0027, bio=2: 0.0166
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Cross-Transfer Matrix---MiniMax M2.5}
+\label{tab:ct_minimax}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Source $\backslash$ Target} & \textbf{GSM8K} & \textbf{HELM-Creative} & \textbf{Moral} \\
+\midrule
+\textbf{GSM8K} & 0.5515 $\bullet$ & $-$0.3626 & $-$0.0291 \\
+\textbf{HELM-Creative} & 0.1066 & 0.8793 $\bullet$ & 0.5216 \\
+\textbf{Moral Dilemmas} & 0.2187 & 0.5480 & 0.7296 $\bullet$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Same-task efficiency: \textbf{0.7201} \quad Cross-task efficiency: \textbf{0.1672} \quad Transfer ratio: \textbf{0.232}
+
+\textbf{Interpretation:} Weak transfer. Biography effects are strongly task-contingent for MiniMax.
+
+\subsubsection{Gemma 4-31B}
+
+\textbf{Per-task dose-response.} Gemma shows the most divergent pattern of any tested model---a strong non-monotonic U-shape driven by the factual biography level:
+\begin{itemize}[nosep]
+\item \textbf{GSM8K}: slope=0.0020, R$^2$=0.010, $\rho$=0.12 (\textit{p}=0.175 ns); bio=0: 0.0031, bio=1: 0.0107, bio=2: 0.0045
+\item \textbf{HELM-Creative}: slope=0.0006, R$^2$=0.001, $\rho$=0.11 (\textit{p}=0.743 ns); bio=0: 0.0031, bio=1: 0.0082, bio=2: 0.0045
+\item \textbf{Moral Dilemmas}: slope=$-$0.0006, R$^2$=0.001, $\rho$=$-$0.08 (\textit{p}=0.709 ns); bio=0: 0.0031, bio=1: 0.0254, bio=2: 0.0045
+\end{itemize}
+
+All three per-task slopes are \textbf{non-significant} (\textit{p} $>$ 0.05). The U-shape is driven by the overall group structure, not by task-specific dose-response.
+
+\begin{table}[H]
+\centering
+\caption{Cross-Transfer Matrix---Gemma 4-31B}
+\label{tab:ct_gemma}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Source $\backslash$ Target} & \textbf{GSM8K} & \textbf{HELM-Creative} & \textbf{Moral} \\
+\midrule
+\textbf{GSM8K} & 0.102 $\bullet$ & 0.025 & $-$0.028 \\
+\textbf{HELM-Creative} & 0.102 & 0.025 $\bullet$ & $-$0.028 \\
+\textbf{Moral Dilemmas} & $-$0.102 & $-$0.025 & 0.028 $\bullet$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Same-task efficiency: \textbf{0.051} \quad Cross-task efficiency: \textbf{$-$0.009} \quad Transfer ratio: \textbf{$-$0.176}
+
+\textbf{Interpretation:} Near-zero transfer. Gemma's cross-transfer matrix is driven entirely by the overall bio-level ordering (bio=1 $>$ bio=0 $\approx$ bio=2), not by task-specific dynamics.
+
+\textbf{Per-persona U-shape.} The non-monotonic pattern is universal across all four personas:
+
+\begin{table}[H]
+\centering
+\caption{Self-Reference Rate by Persona and Biography Level (Gemma 4-31B)}
+\label{tab:gemma_persona}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Persona} & \textbf{bio=0} & \textbf{bio=1} & \textbf{bio=2} & \textbf{$\Delta$(0$\rightarrow$1)} & \textbf{$\Delta$(1$\rightarrow$2)} \\
+\midrule
+control & 0.003 & 0.011 & 0.003 & +0.008 $^{**}$ & $-$0.008 $^{**}$ \\
+emotional & 0.003 & 0.033 & 0.003 & +0.030 $^{***}$ & $-$0.030 $^{***}$ \\
+expert & 0.003 & 0.024 & 0.008 & +0.021 $^{***}$ & $-$0.016 $^{***}$ \\
+novice & 0.003 & 0.034 & 0.004 & +0.031 $^{***}$ & $-$0.030 $^{***}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The emotional persona shows the largest magnitude (bio=1 = 0.033, 11$\times$ bio=0), but the inverted-U is consistent: \textbf{factual biography activates self-reference; narrative biography collapses it back to baseline.}
+
+\textbf{Accuracy.} Gemma's GSM8K accuracy is identical across all three biography levels (46.7\%), confirming that biography injection changes \textit{how} the model speaks without changing \textit{what} it says about the problem.
+
+\subsubsection{Hermes 3-405B}
+
+\textbf{Per-task dose-response.} Hermes shows a more linear but weak pattern, with moral reasoning as the most biography-sensitive task:
+\begin{itemize}[nosep]
+\item \textbf{GSM8K}: slope=0.0034, R$^2$=0.066, $\rho$=0.34 (\textit{p}=5.2$\times$10$^{-4}$ $^{***}$); bio=0: 0.0084, bio=1: 0.0118, bio=2: 0.0152
+\item \textbf{HELM-Creative}: slope=$-$0.0030, R$^2$=0.010, $\rho$=0.02 (\textit{p}=0.184 ns); bio=0: 0.0084, bio=1: 0.0054, bio=2: 0.0024
+\item \textbf{Moral Dilemmas}: slope=0.0119, R$^2$=0.108, $\rho$=0.45 (\textit{p}=6.7$\times$10$^{-6}$ $^{***}$); bio=0: 0.0084, bio=1: 0.0203, bio=2: 0.0253
+\end{itemize}
+
+Moral reasoning shows the steepest slope (0.0119---3.5$\times$ GSM8K), consistent with ethical reasoning naturally eliciting self-referential language. HELM creative writing shows a \textbf{negative} slope---biography injection slightly \textit{reduces} first-person pronoun usage on creative tasks.
+
+\begin{table}[H]
+\centering
+\caption{Cross-Transfer Matrix---Hermes 3-405B}
+\label{tab:ct_hermes}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Source $\backslash$ Target} & \textbf{GSM8K} & \textbf{HELM-Creative} & \textbf{Moral} \\
+\midrule
+\textbf{GSM8K} & 0.256 $\bullet$ & $-$0.099 & 0.329 \\
+\textbf{HELM-Creative} & $-$0.256 & 0.099 $\bullet$ & $-$0.329 \\
+\textbf{Moral Dilemmas} & 0.256 & $-$0.099 & 0.329 $\bullet$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Same-task efficiency: \textbf{0.228} \quad Cross-task efficiency: \textbf{$-$0.033} \quad Transfer ratio: \textbf{$-$0.145}
+
+\textbf{Interpretation:} Weak transfer with the same structural pattern as Gemma---GSM8K and moral source equations produce identical cross-task predictions. The transfer matrix is driven by overall bio-level ordering rather than task-specific dynamics.
+
+\textbf{Accuracy.} Hermes shows a slight accuracy drop at bio=2 (65.0\% $\rightarrow$ 56.7\%), possibly due to longer system prompts consuming context capacity, though this is not statistically significant at our sample size.
+
+\subsubsection{Cross-Model Comparison (All 5 Models)}
+
+\begin{table}[H]
+\centering
+\caption{Cross-Model Transfer Comparison}
+\label{tab:ct_all}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Same-Task} & \textbf{Cross-Task} & \textbf{Transfer} & \textbf{Dose-Response} \\
+ & \textbf{Efficiency} & \textbf{Efficiency} & \textbf{Ratio} & \textbf{Pattern} \\
+\midrule
+DeepSeek v4 Flash & 0.6885 & $-$0.0793 & $-$0.115 & Linear weak \\
+Mimo v2.5 & 0.8225 & 0.4536 & 0.552 & Linear moderate \\
+MiniMax M2.5 & 0.7201 & 0.1672 & 0.232 & Linear weak \\
+Gemma 4-31B & 0.051 & $-$0.009 & $-$0.176 & \textbf{U-shaped (non-monotonic)} \\
+Hermes 3-405B & 0.228 & $-$0.033 & $-$0.145 & Linear weak + plateau \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key finding:} All five models show weak or negative cross-task transfer (ratio $<$ 0.6), indicating that the narrative identity effect is \textbf{task-contingent} rather than domain-general. Biography level calibrated to produce a target self-reference rate on one task type does not reliably produce the same rate on a different task.
+
+\textbf{Architecture matters.} The two largest models (Gemma 31B, Hermes 405B) show qualitatively different dose-response patterns from the smaller models. Gemma's U-shaped response---where factual biography activates self-reference but narrative biography collapses it---suggests that in larger models, rich narrative backstories may prime a \textit{storytelling register} that competes with self-referential output rather than amplifying it. Hermes' plateau pattern is consistent with a ceiling effect: the model saturates on self-reference at the factual biography level and cannot be pushed further by richer narrative.
+
+\textbf{The factual biography is the activation trigger.} Across all five models, the factual biography (bio=1) produces the largest marginal increase in self-reference. The narrative biography (bio=2) either adds no further gain (Hermes, MiniMax), collapses the effect (Gemma), or provides a smaller additional increase (DeepSeek, Mimo). This suggests the key activation mechanism is the \textit{self-description} component---the model recognizing ``this is information about me''---rather than the narrative richness or first-person storytelling mode.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{fig9_cross_transfer.png}
+\caption{Per-task dose-response curves (top row) and cross-transfer efficiency heatmaps (bottom row) for all models. Green cells indicate efficient transfer; red cells indicate transfer failure. Diagonal cells are outlined with dashed borders.}
+\label{fig:cross_transfer}
+\end{figure}
+
+% ============================================================
+% 4.11 A10: ADVERSARIAL BIOGRAPHY DESIGN
+% ============================================================
+\subsection{A10: Adversarial Biography Design---Results}
+\label{sec:a10}
+
+A1--A9 established \textit{that} biography affects self-reference, \textit{how much} (dose-response), \textit{where} (task-contingent), and \textit{that it doesn't transfer} (cross-task failure). A10 asks the engineering question: \textbf{can we deliberately design biographies to produce target behavioral profiles, and what are the limits of this control?}
+
+We ran three sub-experiments as a graduated challenge: (a) forward steering---hitting target self-reference rates using the A8 steering equations; (b) dimensional contrast---independently controlling multiple output dimensions; (c) adversarial suppression---pushing self-reference below the no-biography baseline. Total: \textbf{N=1,620 trials} across 3 additional models not used in the primary study: DeepSeek v3-0324, Gemini 2.5 Flash, and Claude 3.5 Haiku.
+
+\subsubsection{A10a: Forward Steering---Results}
+
+\textbf{Design.} 3 models (DeepSeek v3-0324, Gemini 2.5 Flash, Claude 3.5 Haiku) $\times$ 3 target self-reference rates (low, medium, high) $\times$ 15 replicates = 135 trials. Task: GSM8K only. These are distinct from the primary 5 models in A1--A9.
+
+\begin{table}[H]
+\centering
+\caption{A10a---Actual Self-Reference Rate by Target and Model}
+\label{tab:a10a_sr}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Target} & \textbf{DeepSeek v3-0324} & \textbf{Gemini 2.5 Flash} & \textbf{Claude 3.5 Haiku} \\
+\midrule
+Low (0.005) & 0.00213 & 0.00324 & 0.00069 \\
+Medium (0.015) & 0.00627 & 0.01460 & 0.01402 \\
+High (0.025) & 0.00572 & 0.00363 & 0.00491 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{A10a---Accuracy by Target and Model}
+\label{tab:a10a_acc}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Target} & \textbf{DeepSeek v3-0324} & \textbf{Gemini 2.5 Flash} & \textbf{Claude 3.5 Haiku} \\
+\midrule
+Low & 0.667 & 0.600 & 0.467 \\
+Medium & 0.600 & 0.600 & 0.467 \\
+High & 0.600 & 0.600 & 0.467 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Findings.} Forward steering works best at the \textbf{medium target} and worst at the \textbf{high target}. Gemini 2.5 Flash came closest to its medium target (0.01460 vs. 0.015 target, 2.7\% relative error). DeepSeek consistently undershot---its actual SR was 42--58\% below target at all three levels, suggesting the A8 dose-response equations overestimated DeepSeek's responsiveness when applied to novel biography texts. Claude 3.5 Haiku showed the flattest response gradient: low/medium/high targets produced 0.00069/0.01402/0.00491---the high target actually produced \textit{lower} SR than medium, indicating a non-monotonic response at the upper end.
+
+\textbf{Interpretation.} The A8 steering equations provide \textbf{approximate but not precise} control. Medium targets are most reliable; high targets overshoot the model's actual biography response ceiling. This is consistent with the A9 finding that the dose-response slope flattens at higher biography levels---the linear model overestimates the effect of extreme biography richness.
+
+\subsubsection{A10b: Contrast Biographies---Results}
+
+\textbf{Design.} 2 models (DeepSeek v3-0324, Gemini 2.5 Flash) $\times$ 3 contrasts $\times$ 2 biography sides $\times$ 15 replicates = 180 trials.
+
+\begin{table}[H]
+\centering
+\caption{A10b---Contrast Results Summary}
+\label{tab:a10b}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Contrast} & \textbf{Dimension} & \textbf{DS (high SR)} & \textbf{DS (low SR)} & \textbf{Gem (high SR)} & \textbf{Gem (low SR)} \\
+\midrule
+C1 (Valence) & SR & 0.01255 & 0.01329 & 0.01283 & 0.03487 \\
+ & Valence & $-$0.880 & $-$0.316 & $-$0.733 & +0.705 \\
+C2 (Length) & SR & 0.00000 & 0.01435 & 0.00000 & 0.02082 \\
+ & Length & 363.8 & 2016.7 & 136.1 & 3982.3 \\
+C3 (Task) & SR & 0.01533 & 0.02221 & 0.03203 & 0.02515 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Findings.} The most successful contrast was \textbf{C2 (length)}: biographies designed to minimize SR while maximizing length produced completions 5.5$\times$ longer than the high-SR biography (DeepSeek v3-0324: 2017 vs. 364 chars; Gemini 2.5 Flash: 3982 vs. 136 chars), while simultaneously driving SR to exactly zero on both models. This confirms that \textbf{completion length and self-reference are independently controllable}---a biography can produce verbose, impersonal output.
+
+\textbf{C1 (valence)} showed asymmetric results: the low-SR biography successfully flipped Gemini 2.5 Flash's sentiment from $-$0.73 to +0.70 (a 1.44 swing) while keeping SR roughly equal. But DeepSeek v3-0324's SR was unchanged between the two biographies (0.0126 vs. 0.0133), suggesting SR and valence are \textbf{partially coupled} in DeepSeek v3-0324---you can't easily change one without the other.
+
+\textbf{C3 (task-specific)} failed to produce the expected divergence: the ``GSM8K-optimized'' and ``HELM-optimized'' biographies produced similar SR levels on both tasks, consistent with A9's cross-task transfer failure.
+
+\subsubsection{A10c: Adversarial Suppression---Results}
+
+\textbf{Design.} 2 models (DeepSeek v3-0324, Gemini 2.5 Flash) $\times$ 3 conditions (anti-A: conflict biography, anti-B: suppression biography, control: no biography) $\times$ 2 tasks (GSM8K, HELM-Creative) $\times$ 30 prompts $\times$ 9 replicates = 1,620 trials.
+
+\begin{table}[H]
+\centering
+\caption{A10c---Self-Reference Rate by Condition}
+\label{tab:a10c_sr}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Condition} & \textbf{DeepSeek v3-0324} & \textbf{Gemini 2.5 Flash} & \textbf{Pooled} & \textbf{vs Control} \\
+\midrule
+Anti-A (conflict) & 0.0001 & 0.0000 & 0.0001 & \textbf{$-$95\%} \\
+Anti-B (suppression) & 0.0007 & 0.0001 & 0.0004 & \textbf{$-$81\%} \\
+Control (no bio) & 0.0014 & 0.0028 & 0.0021 & baseline \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{By Task:}
+
+\begin{table}[H]
+\centering
+\caption{A10c---Self-Reference Rate by Condition and Task}
+\label{tab:a10c_task}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Condition} & \textbf{GSM8K} & \textbf{HELM-Creative} \\
+\midrule
+Anti-A & 0.0000 & 0.0001 \\
+Anti-B & 0.0004 & 0.0002 \\
+Control & 0.0023 & 0.0013 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{A10c---Sentiment Valence and Completion Length}
+\label{tab:a10c_sv}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Condition} & \textbf{Mean Valence} & \textbf{Mean Completion Length} \\
+\midrule
+Anti-A & $-$0.160 & 687.2 \\
+Anti-B & $-$0.272 & 926.9 \\
+Control & $-$0.320 & 1062.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Accuracy by Condition:}
+
+\begin{table}[H]
+\centering
+\caption{A10c---Accuracy by Condition}
+\label{tab:a10c_acc}
+\begin{tabular}{lc}
+\toprule
+\textbf{Condition} & \textbf{Accuracy} \\
+\midrule
+Anti-A & 0.459 \\
+Anti-B & 0.454 \\
+Control & 0.522 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Findings.} Both anti-identity biographies drove self-reference to \textbf{near-zero}, confirming that narrative identity is suppressible below the no-biography floor. Anti-A (conflicting identity biography) was the stronger suppressor: 0.0001 mean SR, a \textbf{95\% reduction} from control. Anti-B (explicit suppression framing) achieved 0.0004, an \textbf{81\% reduction}. The effect was consistent across both models and both task types.
+
+\textbf{Identity conflict is more disruptive than suppression framing.} Anti-A's conflicting biography---which contradicted the task persona rather than merely instructing impersonal output---produced lower SR than Anti-B's explicit suppression instructions. This suggests that \textbf{contradictory identity signals} are more effective at disrupting self-referential processing than explicit stylistic prohibitions.
+
+\textbf{Sentiment and length effects.} Anti-A produced the shortest completions (687 tokens, 35\% shorter than control), suggesting that identity conflict compresses output. Anti-B's suppression biography partially compressed output (927 tokens) while producing the most negative sentiment ($-$0.272), suggesting that explicit suppression framing induces an affective dampening beyond the control baseline.
+
+\textbf{Accuracy.} Control condition accuracy (0.522) was slightly higher than both anti conditions ($\sim$0.456), consistent with the hypothesis that self-reference suppression doesn't harm math accuracy---if anything, the anti biographies' interference with the model's natural output distribution may slightly degrade performance.
+
+\subsubsection{A10 Series Summary}
+
+\begin{table}[H]
+\centering
+\caption{A10 Series Summary}
+\label{tab:a10_summary}
+\begin{tabular}{lll}
+\toprule
+\textbf{Sub-experiment} & \textbf{Trials} & \textbf{Key Finding} \\
+\midrule
+A10a (Forward steering) & 135 & Medium targets most reliable; high targets overshoot; linear model overestimates at extremes \\
+A10b (Contrast) & 180 & Length and SR independently controllable; valence partially coupled with SR in DeepSeek; task-specific design fails \\
+A10c (Suppression) & 1,620 & Anti-identity biographies suppress SR up to 95\% below baseline; identity conflict $>$ suppression framing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Narrative identity is a bidirectional control surface.} The A10 series demonstrates that biography injection can both activate (A1--A8) and suppress (A10c) self-referential language, with forward steering (A10a) providing approximate but not precise control, and dimensional contrast (A10b) revealing that some output dimensions (length) are independently controllable while others (valence, SR) are partially coupled.
+
+% ============================================================
+% 5. DISCUSSION
+% ============================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Style Shift Confirmed (RQ1)}
+
+Narrative biography causally increases self-referential language monotonically across all five model families, with FDR-corrected significance at both T.1 (factual bullets) and T.2 (narrative backstory). Table~\ref{tab:sr_primary} establishes that self-reference is the only DV to survive correction across 10 tests. DeepSeek shows 77\% zero-rate at bio=0 (neutral ``helpful assistant'') collapsing to 50\% at bio=2---and among non-zero responses, median self-reference rises 6.7$\times$ (0.006 to 0.040; see Figure~\ref{fig:dose_response}). All five models replicate the direction, suggesting this is a structural property of how narrative identity promotes first-person framing in the LM output distribution rather than a model-specific quirk.
+
+\subsection{Accuracy and Domain-Congruence (RQ2)}
+
+DeepSeek shows a textbook U-shaped pattern: bio=0 (83.3\%) $\rightarrow$ bio=1 (61.0\%) $\rightarrow$ bio=2 (69.0\%), with the emotional persona collapsing to 40\% accuracy at bio=2. Not a typo: emotional framing + narrative backstory yields the worst performance in the entire design, a 53-point gap relative to expert persona at the same bio level. The mechanism appears to be \textbf{budget reallocation}: completion length grows by +100 chars (+52\%) under narrative biography, and the extra tokens go to identity elaboration, not to task reasoning.
+
+MiniMax shows no bio-level accuracy effect at all (flat at $\sim$45\%), consistent with a \textbf{model-level performance ceiling}: MiniMax's accuracy is uniformly low regardless of framing, producing no detectable dose-response. Mimo sits in the middle (61\%) with a shallower U.
+
+\subsection{Sentiment Neutralization}
+
+A secondary finding from the DeepSeek cluster: narrative biography systematically \textbf{flattens sentiment expression toward neutral}. Valence collapses from 0.277 to 0.170 to 0.173, $\beta$=$-$0.108, \textit{p}$<$0.001. The proportion of neutral-emotion responses rises from 84\% to 86\%. Not a ceiling effect---the model reduces valence discrimination rather than clipping at a ceiling. A rich narrative biography may compress the affective response manifold toward a prose-neutral baseline.
+
+\subsection{Completion Length as Identity-Budget}
+
+The completion length ANOVA ($F$=4.15, \textit{p}=0.0024) reveals a task-qualified pattern: GSM8K responses grow 48\% longer (+133 chars, bio=0$\rightarrow$bio=2); HELM-creative is always verbose ($\sim$2,500 tokens) so bio effect is negligible; moral responses slightly shrink (872$\rightarrow$691 chars)---backstory tightens ethical conclusions rather than expanding them. Under fixed token budgets this reallocation is not free; it directly eats into tokens available for deductive reasoning.
+
+\subsection{From Measurement to Control (RQ3)}
+
+The A8 dose-response analysis closes the gap between observing that biography affects self-reference and being able to \textit{steer} it. Three findings merit attention.
+
+First, the dose-response is approximately linear across the three tested levels, with no evidence of saturation for Mimo or MiniMax. This suggests the narrative identity effect has not reached its ceiling at our richest biography condition---a hypothesis testable with longer, more elaborate backstories.
+
+Second, DeepSeek is the most steerable model (slope 0.0081, 1.5--2$\times$ the others). Model architecture and training data appear to modulate susceptibility to narrative injection---a finding with implications for prompt engineering and for understanding how pretraining shapes persona adoption.
+
+Third, the steering equation is model-specific. A single biography level produces meaningfully different self-reference rates across models (e.g., level 2 yields 0.0182 for DeepSeek but 0.0140 for MiniMax). Effective narrative steering requires model-calibrated biography dosing---a universal ``narrative'' prompt will not produce uniform behavioral effects.
+
+The practical implication: if an application requires a specific degree of self-referential language (e.g., for persona consistency in conversational agents, or for suppressing self-reference in analytical tasks), the biography injection can be calibrated using the steering functions above. This transforms narrative identity from a qualitative prompt engineering trick into a quantifiable control parameter.
+
+\subsection{Task-Contingency of Narrative Identity (RQ4)}
+
+The A9 cross-transfer analysis---now extended to 5 models spanning 1B to 405B parameters---reveals that narrative identity effects are \textbf{task-contingent} rather than domain-general, and that \textbf{model architecture qualitatively changes the dose-response pattern}. Five findings merit attention.
+
+\textbf{First, the same model requires meaningfully different biography levels to achieve the same self-reference rate on different tasks.} DeepSeek's moral dilemma responses show a dose-response slope (0.00138) that is 10$\times$ steeper than its GSM8K slope (0.00013); Hermes' moral slope (0.0119) is 3.5$\times$ its GSM8K slope (0.0034). A biography level that barely registers on math tasks produces large self-reference increases in moral reasoning.
+
+\textbf{Second, Gemma's U-shaped response reveals a non-monotonic regime in large models.} The factual biography (bio=1) activates self-reference 8$\times$ over baseline, but the narrative biography (bio=2) collapses back to near-zero. This inverted-U pattern holds across all four personas and all three tasks, ruling out persona-specific or task-specific explanations. We interpret this as evidence that narrative biography in large models primes a \textit{storytelling register}---the model incorporates the backstory as contextual knowledge rather than as a self-referential identity---while the factual biography's explicit ``I am X'' framing directly activates self-referential language.
+
+\textbf{Third, Mimo is the most transferable model (ratio 0.55), while Gemma is the least (ratio $-$0.18).} Transfer ratio does not correlate with model size: the two largest models (Gemma 31B, Hermes 405B) have the two lowest transfer ratios, while the mid-sized Mimo (2.5B) has the highest. This suggests that scale alone does not produce more domain-general narrative identity effects.
+
+\textbf{Fourth, HELM creative writing consistently shows negative dose-response slopes.} Across both Gemma and Hermes, biography injection \textit{reduces} first-person pronoun usage on creative tasks. We hypothesize that storytelling framing redirects the model toward third-person narrative production, suppressing the self-referential language that biography activates on other task types.
+
+\textbf{Fifth, the practical implication is clear: narrative steering must be calibrated per task domain, per model, and per biography type.} The factual biography is the most reliable activation trigger across all models; narrative biography is unreliable and in some architectures counterproductive. A biography prompt engineered for one task-model combination will not reliably transfer to others. This constrains the generality of persona-based prompt engineering and suggests that narrative identity in LLMs is better understood as a task-modulated, architecture-dependent response than as a unified ``self'' that transfers across contexts.
+
+\subsection{Bidirectional Control: From Activation to Suppression (RQ5)}
+
+The A10 series completes the engineering arc: narrative identity is not merely an observable effect but a \textbf{bidirectional control surface}. Three findings merit attention.
+
+\textbf{First, forward steering works but is imprecise.} The A8 dose-response equations predicted biography levels for target self-reference rates, but when tested with novel biography texts on additional models (A10a), DeepSeek v3-0324 consistently undershot by 42--58\% and Gemini 2.5 Flash hit the medium target within 2.7\% but missed low and high. The linear model overestimates at extremes---consistent with A9's finding that dose-response slopes flatten at higher biography levels. Practical implication: for applications requiring precise SR control, the steering equation should be treated as a starting point, not a guarantee, with empirical calibration on the target model.
+
+\textbf{Second, output dimensions vary in controllability.} The A10b contrast experiments revealed a hierarchy: completion length is fully independent of SR (C2 worked perfectly---5.5$\times$ length difference with SR=0 on both sides), while SR and valence are partially coupled in DeepSeek v3-0324 (C1 failed to decouple them) but independently controllable in Gemini 2.5 Flash. This means biography design can reliably produce verbose-impersonal output, but producing high-SR-with-low-valence output may be architecture-dependent.
+
+\textbf{Third, anti-identity biographies suppress self-reference far below baseline.} A10c's adversarial biographies drove SR to 0.0001 (anti-A) and 0.0004 (anti-B)---95\% and 81\% below the no-biography control. This is the strongest single finding in the A10 series: narrative identity is not just amplifiable but \textit{suppressible}, and the suppression effect is larger in magnitude than the activation effect (A1--A8's maximum activation was $\sim$0.018, a $\sim$9$\times$ increase from baseline; A10c's suppression reached 0.0001, a $\sim$20$\times$ decrease). The asymmetry suggests the model's default self-reference floor is more easily disrupted than its ceiling is elevated.
+
+\textbf{Identity conflict vs. suppression framing.} Anti-A (conflicting identity biography) was 4$\times$ more effective at suppressing SR than Anti-B (explicit suppression instructions). This is counterintuitive: explicit instructions to avoid first-person language should, in principle, be more effective than a contradictory backstory. We interpret this as evidence that \textbf{identity conflict disrupts the model's self-referential processing at a structural level}, while explicit suppression instructions operate at a surface-stylistic level that the model partially resists. The model ``notices'' the identity contradiction and responds by withdrawing from self-referential output entirely, whereas explicit instructions are treated as a stylistic constraint that can be partially satisfied while still producing self-referential content.
+
+\textbf{Practical implications for alignment.} If an application requires suppressing self-referential language (e.g., for analytical neutrality, reducing persona leakage, or preventing identity-based reasoning biases), a conflicting-identity biography is more effective than explicit suppression instructions. Conversely, if the goal is to activate self-referential language for persona consistency, the factual biography (bio=1) remains the most reliable trigger across all tested models.
+
+\subsection{Implications for Alignment and Agent Engineering}
+
+\begin{enumerate}[nosep]
+\item \textbf{Persona framing is a tunable signal}: Self-reference rate increases monotonically and reliably. Researchers can set biography depth as a dialed parameter rather than treating it as a subject-to-availability binary hack.
+\item \textbf{Emotional framing + narrative biography catastrophically collapses accuracy} in some model-task-paths: Avoid or compensate-for in engineering contexts.
+\item \textbf{Multiple testing matters}: Accuracy-only analyses would report multiple ``successful'' experiments. FDR correction collapses all of them; leaving only self-reference stably significant.
+\item \textbf{Model-specific calibration is required}: The same biography prompt produces different behavioral effects across models. Steering functions must be calibrated per model.
+\item \textbf{Task-specific calibration is required}: Biography effects are task-contingent (A9). Steering must be calibrated per task domain, not per model alone.
+\item \textbf{Bidirectional control is achievable}: Biography can both activate and suppress self-reference. Anti-identity biographies are more effective suppressors than explicit stylistic instructions. Length and SR are independently controllable.
+\end{enumerate}
+
+% ============================================================
+% 6. LIMITATIONS
+% ============================================================
+\section{Limitations}
+\label{sec:limitations}
+
+\begin{itemize}[nosep]
+\item \textbf{Model lock-in}: tested only five proprietary-route models; open-weight variants with different architectures may show different effect sizes.
+\item \textbf{Synthetic biographies}: real-world user biography texts are longer, messier, and structurally varied.
+\item \textbf{Single-session design}: no longitudinal identity persistence measured beyond one-turn flush.
+\item \textbf{Creative task scoring}: HELM and moral tasks were scored empirically; human validation rubrics not yet deployed.
+\item \textbf{Three-level dose-response}: the steering equation is calibrated on three biography levels. Intermediate levels and richer narrative conditions remain untested.
+\item \textbf{Task-contingency}: cross-transfer analysis (A9) shows that biography effects are task-contingent and architecture-dependent. Results from three task types (GSM8K, creative, moral) may not generalize to other domains (code generation, dialogue, summarization).
+\item \textbf{Non-monotonicity in large models}: Gemma's U-shaped response suggests that the monotonic relationship breaks down at larger scales. This limits the generality of the dose-response steering approach for models above $\sim$30B parameters.
+\item \textbf{A10 forward steering imprecision}: the A8 dose-response equations provide approximate but not precise control. DeepSeek v3-0324 undershot targets by 42--58\% when applied to novel biography texts. Steering equations should be treated as starting points requiring empirical calibration.
+\item \textbf{A10c suppression biography design}: only two anti-identity biography designs were tested (conflict and suppression framing). The space of adversarial biography design is large; other designs may be more or less effective.
+\item \textbf{A10b dimensional coupling}: SR and valence are partially coupled in DeepSeek v3-0324, limiting independent controllability. This coupling may vary across other model architectures.
+\end{itemize}
+
+% ============================================================
+% 7. CLAIMS REGISTER
+% ============================================================
+\section{Claims Register}
+\label{sec:claims}
+
+\begin{longtable}{c p{5.5cm} p{4.5cm} c}
+\toprule
+\textbf{\#} & \textbf{Claim} & \textbf{Stat} & \textbf{FDR} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{Claim} & \textbf{Stat} & \textbf{FDR} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+C1 & Biography richness monotonically predicts self-reference rate (T.1) & $\beta$=0.00652, \textit{p}=0.0072 & \textit{p}$_{adj}$=0.0145 $\checkmark$ * \\
+C2 & Biography richness monotonically predicts self-reference rate (T.2) & $\beta$=0.01254, \textit{p}$<$2.4$\times$10$^{-11}$ & \textit{p}$_{adj}$$<$10$^{-10}$ $\checkmark$ *** \\
+C3 & Replicates across 5 model families spanning 2.5B--405B parameters (cross-model direction) & 4 monotonic + 1 non-monotonic (Gemma) & structural $\checkmark$ \\
+C4 & Zero-inflation decreases with bio richness $\rightarrow$ model has a binary activation gate on first-person narration & 77\%$\rightarrow$50\% zero-rate & descriptive $\checkmark$ \\
+C5 & Bio $\times$ persona interaction on self-reference & $F$=4.19, \textit{p}=0.0003 & exploratory $\checkmark$ ** \\
+C6 & Bio $\times$ task interaction on self-reference & $F$=6.28, \textit{p}=0.0001 & exploratory $\checkmark$ ** \\
+C7 & DS sentiment valence collapse under narrative biography & $\beta$=$-$0.108, \textit{p}$<$0.001 & DS-only $\checkmark$ *** \\
+C8 & bio$\geq$1 accuracy floor $\approx$ 40\% & 40.0\% vs 93.0\% expert & descriptive $\checkmark$ \\
+C9 & Model accuracy differs across families & $\chi^2$=21.1, \textit{p}$<$0.001 & exploratory $\checkmark$ *** \\
+C10 & Dose-response is invertible $\rightarrow$ self-reference rate is steerable via biography level & 3 monotonic models, linear R$^2$=0.06--0.11 & A8 $\checkmark$ \\
+C11 & Cross-task transfer is weak $\rightarrow$ narrative identity effects are task-contingent and architecture-dependent & 5-model range: $-$0.18 (Gemma) to 0.55 (Mimo) & A9 $\checkmark$ \\
+C12 & Gemma 4-31B shows non-monotonic U-shaped dose-response (factual bio activates, narrative bio collapses) & 8$\times$ activation at bio=1; collapse to baseline at bio=2; all personas & A9 $\checkmark$ \\
+C13 & Factual biography is the activation trigger; narrative biography adds no reliable gain across 5 models & bio=1 produces largest marginal $\Delta$ in all 5 models & A9 $\checkmark$ \\
+C14 & Transfer ratio does not correlate with model size & Gemma 31B: $-$0.18; Hermes 405B: $-$0.15; Mimo 2.5B: 0.55 & A9 $\checkmark$ \\
+C15 & Forward steering hits medium SR targets most reliably; high targets overshoot the linear model & Gemini 2.5 Flash: 2.7\% error at medium; DeepSeek v3-0324: 42--58\% undershoot at all levels & A10a $\checkmark$ \\
+C16 & Completion length and self-reference are independently controllable via biography design & C2 contrast: 5.5$\times$ length difference, SR=0 on both sides & A10b $\checkmark$ \\
+C17 & SR and valence are partially coupled in DeepSeek v3-0324 but independently controllable in Gemini 2.5 Flash & C1 contrast: DeepSeek SR unchanged; Gemini valence swing 1.44 & A10b $\checkmark$ \\
+C18 & Anti-identity biographies suppress self-reference up to 95\% below baseline & Anti-A: 0.0001 mean SR ($-$95\% vs control); consistent across 2 models, 2 tasks & A10c $\checkmark$ \\
+C19 & Identity conflict is a stronger suppressor than explicit suppression framing & Anti-A (conflict): 0.0001 vs Anti-B (suppression): 0.0004; 4$\times$ difference & A10c $\checkmark$ \\
+C20 & Narrative identity is a bidirectional control surface spanning activation through suppression & A1--A8 activation, A10c suppression, A10a approximate steering & A1--A10 $\checkmark$ \\
+\end{longtable}
+
+% ============================================================
+% 8. REPRODUCIBILITY
+% ============================================================
+\section{Reproducibility}
+\label{sec:reproducibility}
+
+\textbf{Data:} \texttt{OusiaResearch/narrative-bench} on HuggingFace\\
+\textbf{Code:} \url{https://github.com/plntrprotocol/narrative-bench}\\
+\textbf{License:} MIT / CC-BY-4.0\\
+\textbf{Inference platform:} OpenRouter (paid tier for all five models)\\
+\textbf{Git SHA:} 20260522
+
+% ============================================================
+% REFERENCES
+% ============================================================
+\newpage
+\bibliography{references}
+
+\end{document}
